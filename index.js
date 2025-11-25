@@ -73,3 +73,6 @@ app.get("/", (req, res) => res.send("LINE AI塾長Bot is running"));
 // サーバー起動（Render では PORT が自動付与される）
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
+console.log("LINE_SECRET:", process.env.LINE_CHANNEL_SECRET ? "SET" : "NOT SET");
+console.log("LINE_TOKEN:", process.env.LINE_CHANNEL_ACCESS_TOKEN ? "SET" : "NOT SET");
