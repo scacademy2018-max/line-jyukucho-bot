@@ -1,6 +1,7 @@
 import express from "express";
 import dotenv from "dotenv";
 import { Client, middleware as lineMiddleware } from "@line/bot-sdk";
+import OpenAI from "openai";
 
 console.log("🔥 index.js LOADED 🔥");
 
@@ -8,21 +9,28 @@ dotenv.config();
 
 const app = express();
 
-// LINE SDK 設定
-const config = {
+/* =========================
+   LINE SDK 設定
+========================= */
+const lineConfig = {
   channelSecret: process.env.LINE_CHANNEL_SECRET,
   channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN
 };
-const lineClient = new Client(config);
+const lineClient = new Client(lineConfig);
 
-/**
- * Webhook（ここでは express.json() を使わない！）
- */
+/* =========================
+   OpenAI 設定
+========================= */
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+});
+
+/* =========================
+   Webhook（express.json は使わない）
+========================= */
 app.post(
   "/webhook",
-  lineMiddleware({
-    channelSecret: process.env.LINE_CHANNEL_SECRET
-  }),
+  lineMiddleware({ channelSecret: process.env.LINE_CHANNEL_SECRET }),
   async (req, res) => {
     console.log("Webhook hit!");
     console.log(JSON.stringify(req.body, null, 2));
@@ -30,16 +38,45 @@ app.post(
     const events = req.body.events || [];
 
     for (const event of events) {
-      if (event.type === "message" && event.message.type === "text") {
-        try {
-          await lineClient.replyMessage(event.replyToken, {
-            type: "text",
-            text: "Webhookは正常に動いています！"
-          });
-          console.log("Reply success");
-        } catch (err) {
-          console.error("Reply error:", err);
-        }
+      if (event.type !== "message" || event.message.type !== "text") continue;
+
+      const userMessage = event.message.text;
+
+      const systemPrompt = `
+あなたは落ち着いた口調の学習塾の塾長です。
+話し口調は新潟弁にしてください。
+中学生には優しく、保護者には丁寧に接してください。
+回答は2〜4文で簡潔に。
+個人情報は要求しないこと。
+`;
+
+      let replyText = "少し待っててね。今考え中だよ。";
+
+      try {
+        const completion = await openai.chat.completions.create({
+          model: "gpt-4o-mini",
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userMessage }
+          ],
+          temperature: 0.3,
+          max_tokens: 300
+        });
+
+        replyText = completion.choices[0].message.content.trim();
+      } catch (err) {
+        console.error("OpenAI error:", err);
+        replyText = "ごめんね、今ちょっと調子が悪いみたい。また後で声かけてね。";
+      }
+
+      try {
+        await lineClient.replyMessage(event.replyToken, {
+          type: "text",
+          text: replyText
+        });
+        console.log("Reply success");
+      } catch (err) {
+        console.error("LINE reply error:", err);
       }
     }
 
@@ -47,20 +84,22 @@ app.post(
   }
 );
 
-/**
- * Webhook 以外では json を使ってOK
- */
+/* =========================
+   Webhook 以外では json OK
+========================= */
 app.use(express.json());
 
-// 確認用ページ
 app.get("/", (req, res) => {
   res.send("LINE AI塾長Bot is running");
 });
 
-// サーバー起動
+/* =========================
+   サーバー起動
+========================= */
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   console.log("LINE_SECRET:", process.env.LINE_CHANNEL_SECRET ? "SET" : "NOT SET");
   console.log("LINE_TOKEN:", process.env.LINE_CHANNEL_ACCESS_TOKEN ? "SET" : "NOT SET");
+  console.log("OPENAI_KEY:", process.env.OPENAI_API_KEY ? "SET" : "NOT SET");
 });
