@@ -21,7 +21,7 @@ const openai = new OpenAI({
 });
 
 // Webhook受信（受信確認 + AI返信）
-app.post("/webhook", lineMiddleware(config), async (req, res) => {
+app.post("/webhook", async (req, res) => {
   console.log("Webhook hit!");
   console.log(req.body.events);
 
