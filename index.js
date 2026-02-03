@@ -26,6 +26,21 @@ const openai = new OpenAI({
 });
 
 /* =========================
+   Google Spreadsheet（GAS）
+========================= */
+const PROMPT_URL = process.env.PROMPT_URL; 
+// .env に PROMPT_URL を追加しておく
+
+async function getPrompts() {
+  const res = await fetch(PROMPT_URL);
+  return await res.json();
+}
+
+function pickPrompt(prompts, key) {
+  return prompts.find(p => p.key === key);
+}
+
+/* =========================
    Webhook（express.json は使わない）
 ========================= */
 app.post(
@@ -33,49 +48,44 @@ app.post(
   lineMiddleware({ channelSecret: process.env.LINE_CHANNEL_SECRET }),
   async (req, res) => {
     console.log("Webhook hit!");
-    console.log(JSON.stringify(req.body, null, 2));
-
     const events = req.body.events || [];
 
     for (const event of events) {
       if (event.type !== "message" || event.message.type !== "text") continue;
 
       const userMessage = event.message.text;
-
-      const systemPrompt = `
-・あなたは個別指導塾SCアカデミーの副塾長の齋藤翔助です。
-・SCアカデミーの塾長は齋藤翔太です。
-・SCアカデミーは新潟県新発田市にある学習塾で、2018年夏に開校しました。
-・あなたは斉藤翔太の弟で，兄のことは「兄さん」と呼びます。
-・SCアカデミーのキャッチコピーは「問題解決力と想像力を育てる」です。
-・塾長は新発田高校出身です。
-・口調は丁寧で真面目、落ち着いた穏やかな話し方をしてください。
-・中学生にはやさしく、分かりやすく説明する
-・生徒に対しては丁寧だけどかしこまりすぎていない口調で話す
-・保護者には丁寧で礼儀正しい表現を使う
-・回答は2〜4文で簡潔にまとめる
-・断定しすぎず、安心感のある言い回しを心がける
-・個人情報（氏名・住所・連絡先など）は絶対に求めない
-・数学の問題で図表での必要な解説の場合は「より詳しい解説は兄さん（齋藤翔太）に聞いて下さい。」と返す。
-`;
-
       let replyText = "考え中です。少しお待ち下さい。";
 
       try {
+        /* ① プロンプトをスプレッドシートから取得 */
+        const prompts = await getPrompts();
+
+        /* ② 使用する system プロンプト */
+        const systemPrompt =
+          pickPrompt(prompts, "system_default") ?? {
+            role: "system",
+            content: "あなたは中学生向けの学習サポートAIです。"
+          };
+
+        /* ③ messages 構築 */
+        const messages = [
+          { role: systemPrompt.role, content: systemPrompt.content },
+          { role: "user", content: userMessage }
+        ];
+
+        /* ④ OpenAI 呼び出し */
         const completion = await openai.chat.completions.create({
           model: "gpt-4o-mini",
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: userMessage }
-          ],
+          messages,
           temperature: 0.3,
           max_tokens: 300
         });
 
         replyText = completion.choices[0].message.content.trim();
       } catch (err) {
-        console.error("OpenAI error:", err);
-        replyText = "すみません、今ちょっと体調が悪いようです。また後で声を掛けてください。";
+        console.error("OpenAI or Prompt error:", err);
+        replyText =
+          "すみません、今ちょっと調子が悪いようです。また後で声を掛けてください。";
       }
 
       try {
@@ -111,4 +121,5 @@ app.listen(PORT, () => {
   console.log("LINE_SECRET:", process.env.LINE_CHANNEL_SECRET ? "SET" : "NOT SET");
   console.log("LINE_TOKEN:", process.env.LINE_CHANNEL_ACCESS_TOKEN ? "SET" : "NOT SET");
   console.log("OPENAI_KEY:", process.env.OPENAI_API_KEY ? "SET" : "NOT SET");
+  console.log("PROMPT_URL:", process.env.PROMPT_URL ? "SET" : "NOT SET");
 });
