@@ -21,51 +21,35 @@ const openai = new OpenAI({
 });
 
 // Webhook受信（受信確認 + AI返信）
-app.post("/webhook", async (req, res) => {
-  console.log("Webhook hit!");
-  console.log(req.body.events);
+app.post(
+  "/webhook",
+  lineMiddleware({
+    channelSecret: process.env.LINE_CHANNEL_SECRET
+  }),
+  express.json(),
+  async (req, res) => {
+    console.log("Webhook hit!");
+    console.log(JSON.stringify(req.body, null, 2));
 
-  const events = req.body.events || [];
+    const events = req.body.events || [];
 
-  await Promise.all(events.map(async (event) => {
-    if (event.type !== "message" || event.message.type !== "text") return;
-
-    const userMessage = event.message.text;
-    const systemPrompt = `
-あなたは落ち着いた口調の学習塾の塾長です。
-話し口調は新潟弁にして。
-中学生には優しく、保護者には丁寧に接してください。
-回答は2〜4文で簡潔に。
-個人情報は要求しないこと。
-`;
-
-    let aiReply = "少しお待ちください…";
-
-    try {
-      const completion = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userMessage }
-        ],
-        temperature: 0.3,
-        max_tokens: 500
-      });
-
-      aiReply = completion.choices[0].message.content.trim();
-    } catch (err) {
-      console.error("OpenAI API error:", err);
-      aiReply = "すみません、ただいま応答できません。";
+    for (const event of events) {
+      if (event.type === "message" && event.message.type === "text") {
+        try {
+          await lineClient.replyMessage(event.replyToken, {
+            type: "text",
+            text: "Webhookは正常に動いています！"
+          });
+          console.log("Reply success");
+        } catch (err) {
+          console.error("Reply error:", err);
+        }
+      }
     }
 
-    await lineClient.replyMessage(event.replyToken, {
-      type: "text",
-      text: aiReply
-    });
-  }));
-
-  res.sendStatus(200);
-});
+    res.sendStatus(200);
+  }
+);
 
 // 簡易確認ページ
 app.get("/", (req, res) => res.send("LINE AI塾長Bot is running"));
