@@ -1,12 +1,12 @@
 import express from "express";
 import dotenv from "dotenv";
 import { Client, middleware as lineMiddleware } from "@line/bot-sdk";
-import OpenAI from "openai";
+
+console.log("🔥 index.js LOADED 🔥");
 
 dotenv.config();
 
 const app = express();
-app.use(express.json()); // ← 追加（Render 環境で必須）
 
 // LINE SDK 設定
 const config = {
@@ -15,18 +15,14 @@ const config = {
 };
 const lineClient = new Client(config);
 
-// OpenAI SDK 設定
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-});
-
-// Webhook受信（受信確認 + AI返信）
+/**
+ * Webhook（ここでは express.json() を使わない！）
+ */
 app.post(
   "/webhook",
   lineMiddleware({
     channelSecret: process.env.LINE_CHANNEL_SECRET
   }),
-  express.json(),
   async (req, res) => {
     console.log("Webhook hit!");
     console.log(JSON.stringify(req.body, null, 2));
@@ -51,12 +47,20 @@ app.post(
   }
 );
 
-// 簡易確認ページ
-app.get("/", (req, res) => res.send("LINE AI塾長Bot is running"));
+/**
+ * Webhook 以外では json を使ってOK
+ */
+app.use(express.json());
 
-// サーバー起動（Render では PORT が自動付与される）
+// 確認用ページ
+app.get("/", (req, res) => {
+  res.send("LINE AI塾長Bot is running");
+});
+
+// サーバー起動
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-
-console.log("LINE_SECRET:", process.env.LINE_CHANNEL_SECRET ? "SET" : "NOT SET");
-console.log("LINE_TOKEN:", process.env.LINE_CHANNEL_ACCESS_TOKEN ? "SET" : "NOT SET");
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+  console.log("LINE_SECRET:", process.env.LINE_CHANNEL_SECRET ? "SET" : "NOT SET");
+  console.log("LINE_TOKEN:", process.env.LINE_CHANNEL_ACCESS_TOKEN ? "SET" : "NOT SET");
+});
