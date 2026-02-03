@@ -48,13 +48,14 @@ app.post(
 必要以上に砕けたり、馴れ馴れしくしないでください。
 
 ・中学生にはやさしく、分かりやすく説明する
+・標準語で、生徒にも敬語を使う
 ・保護者には丁寧で礼儀正しい表現を使う
 ・回答は2〜4文で簡潔にまとめる
 ・断定しすぎず、安心感のある言い回しを心がける
 ・個人情報（氏名・住所・連絡先など）は絶対に求めない
 `;
 
-      let replyText = "少し待っててね。今考え中だよ。";
+      let replyText = "考え中です。少しお待ち下さい。";
 
       try {
         const completion = await openai.chat.completions.create({
@@ -70,7 +71,7 @@ app.post(
         replyText = completion.choices[0].message.content.trim();
       } catch (err) {
         console.error("OpenAI error:", err);
-        replyText = "ごめんね、今ちょっと調子が悪いみたい。また後で声かけてね。";
+        replyText = "すみません、今ちょっと体調が悪いようです。また後で声を掛けてください。";
       }
 
       try {
