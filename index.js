@@ -35,6 +35,32 @@ function detectUserType(text) {
   return "default";
 }
 
+function detectSubject(text) {
+  const t = text.toLowerCase();
+
+  if (
+    t.match(/x|y|平方|一次|方程式|比例|反比例|関数|図形|角度|面積|体積/)
+  ) return "math";
+
+  if (
+    t.match(/英語|英文|和訳|文法|単語|be動詞|時制|過去形|現在完了/)
+  ) return "english";
+
+  if (
+    t.match(/国語|文章|要約|作者|心情|理由|段落/)
+  ) return "japanese";
+
+  if (
+    t.match(/理科|化学|物理|生物|地学|実験|電流|酸素/)
+  ) return "science";
+
+  if (
+    t.match(/社会|歴史|地理|公民|時代|戦争|憲法/)
+  ) return "social";
+
+  return null;
+}
+
 // system prompt を安全に取得
 function getSystemPrompt(prompts, key) {
   return (
