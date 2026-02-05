@@ -40,6 +40,29 @@ function pickPrompt(prompts, key) {
   return prompts.find(p => p.key === key);
 }
 
+function detectUserType(text) {
+  const studentKeywords = [
+    "宿題", "テスト", "勉強", "英語", "数学", "わからない",
+    "今日の", "提出", "学校", "部活"
+  ];
+
+  const parentKeywords = [
+    "保護者", "親", "母", "父",
+    "成績", "進路", "受験", "費用", "月謝", "料金",
+    "面談", "授業料"
+  ];
+
+  if (studentKeywords.some(k => text.includes(k))) {
+    return "student";
+  }
+
+  if (parentKeywords.some(k => text.includes(k))) {
+    return "parent";
+  }
+
+  return "default";
+}
+
 /* =========================
    Webhook（express.json は使わない）
 ========================= */
