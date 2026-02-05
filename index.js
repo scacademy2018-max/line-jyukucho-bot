@@ -2,157 +2,153 @@ import express from "express";
 import dotenv from "dotenv";
 import { Client, middleware as lineMiddleware } from "@line/bot-sdk";
 import OpenAI from "openai";
+import fetch from "node-fetch";
+
+console.log("🔥 index.js LOADED 🔥");
 
 dotenv.config();
+
 const app = express();
 
 /* =========================
-   LINE / OpenAI 設定
+   LINE SDK 設定
 ========================= */
-const lineClient = new Client({
+const lineConfig = {
   channelSecret: process.env.LINE_CHANNEL_SECRET,
   channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN
-});
+};
+const lineClient = new Client(lineConfig);
 
+/* =========================
+   OpenAI 設定
+========================= */
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
 
 /* =========================
-   簡易ユーザー履歴（メモリ）
+   GAS（プロンプト取得）
 ========================= */
-const userStates = {};
-/*
-userStates[userId] = {
-  mode: "normal" | "test",
-  step: 1 | 2 | 3,
-  subject: "math" | "english" | null,
-  lastQuestion: ""
-}
-*/
+const PROMPT_URL = process.env.PROMPT_URL;
 
-/* =========================
-   判定系
-========================= */
-function detectSubject(text) {
-  if (text.match(/x|y|方程式|関数|平方/)) return "math";
-  if (text.match(/英語|英文|和訳|文法/)) return "english";
-  return null;
+async function getPrompts() {
+  if (!PROMPT_URL) return [];
+  const res = await fetch(PROMPT_URL);
+  if (!res.ok) throw new Error("Prompt fetch failed");
+  return await res.json();
 }
 
-function detectTestMode(text) {
-  return text.match(/テスト|定期|期末|中間/);
+function pickPrompt(prompts, key) {
+  return prompts.find(p => p.key === key);
 }
 
 /* =========================
-   system プロンプト生成
+   判定系（簡易）
 ========================= */
-function buildSystemPrompt(state) {
-  if (state.mode === "test") {
-    return "あなたは中学生の定期テスト対策を行う塾講師です。答えをすぐ出さず、考えさせてから解説してください。";
-  }
-
-  if (state.step === 1) {
-    return "あなたは問題を出す学習塾の先生です。まずは問題だけを出してください。";
-  }
-  if (state.step === 2) {
-    return "あなたは中学生に向けて、途中式を含めて丁寧に解説する先生です。";
-  }
-  if (state.step === 3) {
-    return "あなたは理解度を確認する先生です。簡単な確認質問を1問だけ出してください。";
-  }
-
-  return "あなたは丁寧で穏やかな学習塾の塾長です。";
+function detectUserType(text) {
+  if (/保護者|親|母|父|入塾|料金|月謝/.test(text)) return "parent";
+  return "student";
 }
 
 /* =========================
    Webhook
+   ※ express.json() は使わない
 ========================= */
 app.post(
   "/webhook",
   lineMiddleware({ channelSecret: process.env.LINE_CHANNEL_SECRET }),
   async (req, res) => {
-    const events = req.body.events || [];
+    console.log("=== WEBHOOK START ===");
 
-    for (const event of events) {
-      if (event.type !== "message" || event.message.type !== "text") continue;
+    try {
+      const events = req.body.events || [];
 
-      const userId = event.source.userId;
-      const text = event.message.text;
+      for (const event of events) {
+        if (event.type !== "message") continue;
+        if (event.message.type !== "text") continue;
+        if (!event.replyToken) continue;
 
-      /* 初期化 */
-      if (!userStates[userId]) {
-        userStates[userId] = {
-          mode: "normal",
-          step: 1,
-          subject: null,
-          lastQuestion: ""
-        };
-      }
+        const userMessage = event.message.text;
 
-      const state = userStates[userId];
-
-      /* 定期テストモード判定 */
-      if (detectTestMode(text)) {
-        state.mode = "test";
-        state.step = 1;
-      }
-
-      /* 科目判定 */
-      const subject = detectSubject(text);
-      if (subject) state.subject = subject;
-
-      /* STEP 管理 */
-      if (state.step === 3) {
-        state.step = 1; // 1サイクル終了
-      }
-
-      const systemPrompt = buildSystemPrompt(state);
-
-      const messages = [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: text }
-      ];
-
-      let reply = "少し考えています…";
-
-      try {
-        const completion = await openai.chat.completions.create({
-          model: "gpt-4o-mini",
-          messages,
-          temperature: 0.3,
-          max_tokens: 300
+        /* ========= 即時返信（replyToken保護） ========= */
+        await lineClient.replyMessage(event.replyToken, {
+          type: "text",
+          text: "ありがとうございます。少し考えますね。"
         });
 
-        reply = completion.choices[0].message.content.trim();
-      } catch (e) {
-        reply = "すみません、今はうまく動いていないようです。";
+        /* ========= 重い処理は後 ========= */
+        (async () => {
+          try {
+            const prompts = await getPrompts();
+            const userType = detectUserType(userMessage);
+
+            let systemKey = "system_default";
+            if (userType === "student") systemKey = "system_student";
+            if (userType === "parent") systemKey = "system_parent";
+
+            const systemPrompt =
+              pickPrompt(prompts, systemKey) || {
+                role: "system",
+                content:
+                  "あなたは丁寧で穏やかな学習塾の塾長です。中学生には優しく、保護者には丁寧に答えてください。回答は2〜4文で簡潔に。"
+              };
+
+            const completion = await openai.chat.completions.create({
+              model: "gpt-4o-mini",
+              messages: [
+                { role: systemPrompt.role, content: systemPrompt.content },
+                { role: "user", content: userMessage }
+              ],
+              temperature: 0.3,
+              max_tokens: 300
+            });
+
+            let replyText =
+              completion.choices[0].message.content?.trim() ||
+              "うまく回答できませんでした。";
+
+            if (replyText.length > 4500) {
+              replyText = replyText.slice(0, 4500);
+            }
+
+            /* ========= Push で本回答 ========= */
+            await lineClient.pushMessage(event.source.userId, {
+              type: "text",
+              text: replyText
+            });
+
+            console.log("Push success");
+          } catch (err) {
+            console.error("Async process error:", err);
+          }
+        })();
       }
-
-      /* STEP を進める */
-      state.step++;
-
-      await lineClient.replyMessage(event.replyToken, {
-        type: "text",
-        text: reply
-      });
+    } catch (err) {
+      console.error("WEBHOOK ERROR:", err);
     }
 
+    console.log("=== WEBHOOK END ===");
     res.sendStatus(200);
   }
 );
 
 /* =========================
-   確認用
+   通常ルート
 ========================= */
+app.use(express.json());
+
 app.get("/", (req, res) => {
-  res.send("LINE AI塾長Bot running");
+  res.send("LINE AI塾長Bot is running");
 });
 
 /* =========================
-   起動
+   サーバー起動
 ========================= */
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
+  console.log("LINE_SECRET:", process.env.LINE_CHANNEL_SECRET ? "SET" : "NOT SET");
+  console.log("LINE_TOKEN:", process.env.LINE_CHANNEL_ACCESS_TOKEN ? "SET" : "NOT SET");
+  console.log("OPENAI_KEY:", process.env.OPENAI_API_KEY ? "SET" : "NOT SET");
+  console.log("PROMPT_URL:", process.env.PROMPT_URL ? "SET" : "NOT SET");
 });
