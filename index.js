@@ -2,13 +2,48 @@ import express from "express";
 import dotenv from "dotenv";
 import { Client, middleware as lineMiddleware } from "@line/bot-sdk";
 import OpenAI from "openai";
-import fetch from "node-fetch";
 
 console.log("🔥 index.js LOADED 🔥");
 
 dotenv.config();
 
 const app = express();
+
+/* =========================
+   ユーティリティ関数
+========================= */
+
+// スプレッドシートから key を探す
+function pickPrompt(prompts, key) {
+  return prompts.find(p => p.key === key);
+}
+
+// 生徒 / 保護者 を自動判定
+function detectUserType(text) {
+  const studentKeywords = [
+    "宿題", "テスト", "勉強", "英語", "数学",
+    "わからない", "学校", "提出", "部活"
+  ];
+
+  const parentKeywords = [
+    "成績", "進路", "受験", "月謝", "料金",
+    "費用", "面談", "保護者", "親"
+  ];
+
+  if (studentKeywords.some(k => text.includes(k))) return "student";
+  if (parentKeywords.some(k => text.includes(k))) return "parent";
+  return "default";
+}
+
+// system prompt を安全に取得
+function getSystemPrompt(prompts, key) {
+  return (
+    pickPrompt(prompts, key) || {
+      role: "system",
+      content: "あなたは丁寧で穏やかな学習塾の塾長です。"
+    }
+  );
+}
 
 /* =========================
    LINE SDK 設定
@@ -27,113 +62,90 @@ const openai = new OpenAI({
 });
 
 /* =========================
-   GAS（プロンプト取得）
+   プロンプト取得（GAS）
 ========================= */
 const PROMPT_URL = process.env.PROMPT_URL;
 
 async function getPrompts() {
-  if (!PROMPT_URL) return [];
   const res = await fetch(PROMPT_URL);
-  if (!res.ok) throw new Error("Prompt fetch failed");
   return await res.json();
 }
 
-function pickPrompt(prompts, key) {
-  return prompts.find(p => p.key === key);
-}
-
 /* =========================
-   判定系（簡易）
-========================= */
-function detectUserType(text) {
-  if (/保護者|親|母|父|入塾|料金|月謝/.test(text)) return "parent";
-  return "student";
-}
-
-/* =========================
-   Webhook
-   ※ express.json() は使わない
+   Webhook（⚠ json middleware 不要）
 ========================= */
 app.post(
   "/webhook",
   lineMiddleware({ channelSecret: process.env.LINE_CHANNEL_SECRET }),
   async (req, res) => {
-    console.log("=== WEBHOOK START ===");
+    console.log("Webhook hit!");
 
-    try {
-      const events = req.body.events || [];
+    const events = req.body.events || [];
 
-      for (const event of events) {
-        if (event.type !== "message") continue;
-        if (event.message.type !== "text") continue;
-        if (!event.replyToken) continue;
+    for (const event of events) {
+      if (event.type !== "message" || event.message.type !== "text") continue;
 
-        const userMessage = event.message.text;
+      const userMessage = event.message.text;
+      let replyText = "少しお待ちください。";
 
-        /* ========= 即時返信（replyToken保護） ========= */
-        await lineClient.replyMessage(event.replyToken, {
-          type: "text",
-          text: "ありがとうございます。少し考えますね。"
+      try {
+        // ① プロンプト一覧取得
+        const prompts = await getPrompts();
+
+        // ② 生徒 / 保護者 判定
+        const userType = detectUserType(userMessage);
+
+        // ③ system key 決定
+        let systemKey = "system_default";
+        if (userType === "student") systemKey = "system_student";
+        if (userType === "parent") systemKey = "system_parent";
+
+        console.log("UserType:", userType);
+        console.log("SystemKey:", systemKey);
+
+        // ④ system prompt 取得
+        const systemPrompt = getSystemPrompt(prompts, systemKey);
+
+        // ⑤ OpenAI messages
+        const messages = [
+          { role: systemPrompt.role, content: systemPrompt.content },
+          { role: "user", content: userMessage }
+        ];
+
+        // ⑥ OpenAI 呼び出し
+        const completion = await openai.chat.completions.create({
+          model: "gpt-4o-mini",
+          messages,
+          temperature: 0.3,
+          max_tokens: 300
         });
 
-        /* ========= 重い処理は後 ========= */
-        (async () => {
-          try {
-            const prompts = await getPrompts();
-            const userType = detectUserType(userMessage);
+        replyText = completion.choices[0].message.content.trim();
 
-            let systemKey = "system_default";
-            if (userType === "student") systemKey = "system_student";
-            if (userType === "parent") systemKey = "system_parent";
-
-            const systemPrompt =
-              pickPrompt(prompts, systemKey) || {
-                role: "system",
-                content:
-                  "あなたは丁寧で穏やかな学習塾の塾長です。中学生には優しく、保護者には丁寧に答えてください。回答は2〜4文で簡潔に。"
-              };
-
-            const completion = await openai.chat.completions.create({
-              model: "gpt-4o-mini",
-              messages: [
-                { role: systemPrompt.role, content: systemPrompt.content },
-                { role: "user", content: userMessage }
-              ],
-              temperature: 0.3,
-              max_tokens: 300
-            });
-
-            let replyText =
-              completion.choices[0].message.content?.trim() ||
-              "うまく回答できませんでした。";
-
-            if (replyText.length > 4500) {
-              replyText = replyText.slice(0, 4500);
-            }
-
-            /* ========= Push で本回答 ========= */
-            await lineClient.pushMessage(event.source.userId, {
-              type: "text",
-              text: replyText
-            });
-
-            console.log("Push success");
-          } catch (err) {
-            console.error("Async process error:", err);
-          }
-        })();
+      } catch (err) {
+        console.error("Error:", err);
+        replyText =
+          "すみません、今は少し調子が悪いようです。また後で声をかけてください。";
       }
-    } catch (err) {
-      console.error("WEBHOOK ERROR:", err);
+
+      // ⑦ LINE 返信
+      try {
+        await lineClient.replyMessage(event.replyToken, {
+          type: "text",
+          text: replyText
+        });
+        console.log("Reply success");
+      } catch (err) {
+        console.error("LINE reply error:", err);
+      }
     }
 
-    console.log("=== WEBHOOK END ===");
     res.sendStatus(200);
   }
 );
 
 /* =========================
-   通常ルート
+   Webhook 以外
 ========================= */
 app.use(express.json());
 
