@@ -87,33 +87,25 @@ app.post(
     for (const event of events) {
 
   let imagePath = null;
+  let replyText = "";
 
   if (event.type !== "message" || event.message.type !== "text") continue;
 
-  const userMessage = event.message.text;
-  let replyText = "";
-
   try {
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userMessage }
-      ]
-    });
-
+    const completion = await openai.chat.completions.create(...);
     replyText = completion.choices[0].message.content.trim();
 
     if (replyText.startsWith("【IMAGE_MODE】")) {
-      const imageText = replyText.replace("【IMAGE_MODE】", "").trim();
-      imagePath = generateMathImage(imageText);
+      imagePath = generateMathImage(
+        replyText.replace("【IMAGE_MODE】", "").trim()
+      );
     }
 
   } catch (err) {
-    console.error(err);
     replyText = "すみません、今は少し調子が悪いようです。";
   }
 
+  // ★★★ ここが for の中 ★★★
   try {
     if (imagePath) {
       await lineClient.replyMessage(event.replyToken, {
