@@ -85,12 +85,7 @@ app.post(
     const events = req.body.events || [];
 
     for (const event of events) {
-
-  console.log("=== EVENT LOOP START ===");
-  let imagePath = null;
-  console.log("imagePath initialized:", imagePath);
-
-       
+  
   let imagePath = null;
   let replyText = "";
 
