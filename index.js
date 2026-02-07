@@ -86,82 +86,52 @@ app.post(
 
     for (const event of events) {
 
-      let imagePath = null;
-       
-      if (event.type !== "message" || event.message.type !== "text") continue;
-       
-      const userMessage = event.message.text;
-      let replyText = "少しお待ちください。";
+  let imagePath = null;
 
-      try {
-        // ① プロンプト一覧取得
-        const prompts = await getPrompts();
+  if (event.type !== "message" || event.message.type !== "text") continue;
 
-        // ② 生徒 / 保護者 判定
-        const userType = detectUserType(userMessage);
+  const userMessage = event.message.text;
+  let replyText = "";
 
-        // ③ system key 決定
-        let systemKey = "system_default";
-        if (userType === "student") systemKey = "system_student";
-        if (userType === "parent") systemKey = "system_parent";
+  try {
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userMessage }
+      ]
+    });
 
-        console.log("UserType:", userType);
-        console.log("SystemKey:", systemKey);
+    replyText = completion.choices[0].message.content.trim();
 
-        // ④ system prompt 取得
-        const systemPrompt = getSystemPrompt(prompts, systemKey);
-
-        // ⑤ OpenAI messages
-        const messages = [
-          { role: systemPrompt.role, content: systemPrompt.content },
-          { role: "user", content: userMessage }
-        ];
-
-        // ⑥ OpenAI 呼び出し
-        const completion = await openai.chat.completions.create({
-          model: "gpt-4o-mini",
-          messages,
-          temperature: 0.3,
-          max_tokens: 300
-        });
-
-        replyText = completion.choices[0].message.content.trim();
-
-// 画像モード判定
-let imagePath = null;
-
-if (replyText.startsWith("【IMAGE_MODE】")) {
-  const imageText = replyText.replace("【IMAGE_MODE】", "").trim();
-  imagePath = generateMathImage(imageText);
-}
-         
-      } catch (err) {
-        console.error("Error:", err);
-        replyText =
-          "すみません、今は少し調子が悪いようです。また後で声をかけてください。";
-      }
-
-      // ⑦ LINE 返信
-      try {
-        if (imagePath) {
-  await lineClient.replyMessage(event.replyToken, {
-    type: "image",
-    originalContentUrl: `${process.env.BASE_URL}/image?path=${encodeURIComponent(imagePath)}`,
-    previewImageUrl: `${process.env.BASE_URL}/image?path=${encodeURIComponent(imagePath)}`
-  });
-} else {
-  await lineClient.replyMessage(event.replyToken, {
-    type: "text",
-    text: replyText
-  });
-}
-
-        console.log("Reply success");
-      } catch (err) {
-        console.error("LINE reply error:", err);
-      }
+    if (replyText.startsWith("【IMAGE_MODE】")) {
+      const imageText = replyText.replace("【IMAGE_MODE】", "").trim();
+      imagePath = generateMathImage(imageText);
     }
 
+  } catch (err) {
+    console.error(err);
+    replyText = "すみません、今は少し調子が悪いようです。";
+  }
+
+  try {
+    if (imagePath) {
+      await lineClient.replyMessage(event.replyToken, {
+        type: "image",
+        originalContentUrl: `${process.env.BASE_URL}/image?path=${encodeURIComponent(imagePath)}`,
+        previewImageUrl: `${process.env.BASE_URL}/image?path=${encodeURIComponent(imagePath)}`
+      });
+    } else {
+      await lineClient.replyMessage(event.replyToken, {
+        type: "text",
+        text: replyText
+      });
+    }
+  } catch (err) {
+    console.error("LINE reply error:", err);
+  }
+}
+     
     res.sendStatus(200);
   }
 );
