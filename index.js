@@ -2,6 +2,9 @@ import express from "express";
 import dotenv from "dotenv";
 import { Client, middleware as lineMiddleware } from "@line/bot-sdk";
 import OpenAI from "openai";
+import fs from "fs";
+import path from "path";
+import { createCanvas } from "canvas";
 
 console.log("🔥 index.js LOADED 🔥");
 
@@ -122,6 +125,14 @@ app.post(
 
         replyText = completion.choices[0].message.content.trim();
 
+// 画像モード判定
+let imagePath = null;
+
+if (replyText.startsWith("【IMAGE_MODE】")) {
+  const imageText = replyText.replace("【IMAGE_MODE】", "").trim();
+  imagePath = generateMathImage(imageText);
+}
+         
       } catch (err) {
         console.error("Error:", err);
         replyText =
@@ -130,10 +141,19 @@ app.post(
 
       // ⑦ LINE 返信
       try {
-        await lineClient.replyMessage(event.replyToken, {
-          type: "text",
-          text: replyText
-        });
+        if (imagePath) {
+  await lineClient.replyMessage(event.replyToken, {
+    type: "image",
+    originalContentUrl: `${process.env.BASE_URL}/image?path=${encodeURIComponent(imagePath)}`,
+    previewImageUrl: `${process.env.BASE_URL}/image?path=${encodeURIComponent(imagePath)}`
+  });
+} else {
+  await lineClient.replyMessage(event.replyToken, {
+    type: "text",
+    text: replyText
+  });
+}
+
         console.log("Reply success");
       } catch (err) {
         console.error("LINE reply error:", err);
@@ -153,6 +173,14 @@ app.get("/", (req, res) => {
   res.send("LINE AI塾長Bot is running");
 });
 
+app.get("/image", (req, res) => {
+  const filePath = req.query.path;
+  if (!filePath || !fs.existsSync(filePath)) {
+    return res.sendStatus(404);
+  }
+  res.sendFile(filePath);
+});
+
 /* =========================
    サーバー起動
 ========================= */
@@ -164,3 +192,31 @@ app.listen(PORT, () => {
   console.log("OPENAI_KEY:", process.env.OPENAI_API_KEY ? "SET" : "NOT SET");
   console.log("PROMPT_URL:", process.env.PROMPT_URL ? "SET" : "NOT SET");
 });
+
+function generateMathImage(text) {
+  const width = 900;
+  const height = 600;
+  const canvas = createCanvas(width, height);
+  const ctx = canvas.getContext("2d");
+
+  // 背景
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, width, height);
+
+  // 文字設定
+  ctx.fillStyle = "#000000";
+  ctx.font = "28px sans-serif";
+
+  const lines = text.split("\n");
+  let y = 60;
+
+  for (const line of lines) {
+    ctx.fillText(line, 40, y);
+    y += 40;
+  }
+
+  const filePath = path.join("/tmp", `math_${Date.now()}.png`);
+  fs.writeFileSync(filePath, canvas.toBuffer("image/png"));
+
+  return filePath;
+}
