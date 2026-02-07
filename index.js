@@ -2,8 +2,6 @@ import express from "express";
 import dotenv from "dotenv";
 import { Client, middleware as lineMiddleware } from "@line/bot-sdk";
 import OpenAI from "openai";
-import fs from "fs";
-import path from "path";
 
 console.log("🔥 index.js LOADED 🔥");
 
@@ -96,7 +94,6 @@ app.post(
 
   if (event.type !== "message" || event.message.type !== "text") continue;
 
-  let imagePath = null;
   let replyText = "";
 
   // ★ 必ず for の中・try の前 ★
@@ -117,30 +114,11 @@ app.post(
 
     replyText = completion.choices[0].message.content.trim();
 
-    if (replyText.startsWith("【IMAGE_MODE】")) {
-      imagePath = generateMathImage(
-        replyText.replace("【IMAGE_MODE】", "").trim()
-      );
-    }
-
   } catch (err) {
     console.error("🔥 OpenAI ERROR 🔥", err);
     replyText = "すみません、今は少し調子が悪いようです。";
   }
 
-  try {
-    if (imagePath) {
-      await lineClient.replyMessage(event.replyToken, {
-        type: "image",
-        originalContentUrl: `${process.env.BASE_URL}/image?path=${encodeURIComponent(imagePath)}`,
-        previewImageUrl: `${process.env.BASE_URL}/image?path=${encodeURIComponent(imagePath)}`
-      });
-    } else {
-      await lineClient.replyMessage(event.replyToken, {
-        type: "text",
-        text: replyText
-      });
-    }
   } catch (err) {
     console.error("LINE reply error:", err);
   }
@@ -159,14 +137,6 @@ app.get("/", (req, res) => {
   res.send("LINE AI塾長Bot is running");
 });
 
-app.get("/image", (req, res) => {
-  const filePath = req.query.path;
-  if (!filePath || !fs.existsSync(filePath)) {
-    return res.sendStatus(404);
-  }
-  res.sendFile(filePath);
-});
-
 /* =========================
    サーバー起動
 ========================= */
@@ -178,31 +148,3 @@ app.listen(PORT, () => {
   console.log("OPENAI_KEY:", process.env.OPENAI_API_KEY ? "SET" : "NOT SET");
   console.log("PROMPT_URL:", process.env.PROMPT_URL ? "SET" : "NOT SET");
 });
-
-function generateMathImage(text) {
-  const lines = text.split("\n");
-
-  const lineHeight = 40;
-  const width = 900;
-  const height = lines.length * lineHeight + 80;
-
-  const svgText = lines.map((line, i) => {
-    const safeLine = line
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;");
-    return `<text x="40" y="${60 + i * lineHeight}" font-size="28" fill="#000">${safeLine}</text>`;
-  }).join("\n");
-
-  const svgContent = `
-<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
-  <rect width="100%" height="100%" fill="#ffffff"/>
-  ${svgText}
-</svg>
-`;
-
-  const filePath = path.join("/tmp", `math_${Date.now()}.svg`);
-  fs.writeFileSync(filePath, svgContent, "utf8");
-
-  return filePath;
-}
