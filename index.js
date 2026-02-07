@@ -90,10 +90,12 @@ app.post(
   let imagePath = null;
   let replyText = "";
 
-  // ★ ここで必ず定義する ★
+  // ★ 必ず for の中・try の前 ★
   const prompts = await getPrompts();
   const userType = detectUserType(event.message.text);
   const systemPrompt = getSystemPrompt(prompts, userType).content;
+
+  console.log("SYSTEM PROMPT:", systemPrompt);
 
   try {
     const completion = await openai.chat.completions.create({
@@ -106,34 +108,34 @@ app.post(
 
     replyText = completion.choices[0].message.content.trim();
 
-        if (replyText.startsWith("【IMAGE_MODE】")) {
-          imagePath = generateMathImage(
-            replyText.replace("【IMAGE_MODE】", "").trim()
-          );
-        }
-
-      } catch (err) {
-        console.error("OpenAI error:", err);
-        replyText = "すみません、今は少し調子が悪いようです。";
-      }
-
-      try {
-        if (imagePath) {
-          await lineClient.replyMessage(event.replyToken, {
-            type: "image",
-            originalContentUrl: `${process.env.BASE_URL}/image?path=${encodeURIComponent(imagePath)}`,
-            previewImageUrl: `${process.env.BASE_URL}/image?path=${encodeURIComponent(imagePath)}`
-          });
-        } else {
-          await lineClient.replyMessage(event.replyToken, {
-            type: "text",
-            text: replyText
-          });
-        }
-      } catch (err) {
-        console.error("LINE reply error:", err);
-      }
+    if (replyText.startsWith("【IMAGE_MODE】")) {
+      imagePath = generateMathImage(
+        replyText.replace("【IMAGE_MODE】", "").trim()
+      );
     }
+
+  } catch (err) {
+    console.error("🔥 OpenAI ERROR 🔥", err);
+    replyText = "すみません、今は少し調子が悪いようです。";
+  }
+
+  try {
+    if (imagePath) {
+      await lineClient.replyMessage(event.replyToken, {
+        type: "image",
+        originalContentUrl: `${process.env.BASE_URL}/image?path=${encodeURIComponent(imagePath)}`,
+        previewImageUrl: `${process.env.BASE_URL}/image?path=${encodeURIComponent(imagePath)}`
+      });
+    } else {
+      await lineClient.replyMessage(event.replyToken, {
+        type: "text",
+        text: replyText
+      });
+    }
+  } catch (err) {
+    console.error("LINE reply error:", err);
+  }
+}
 
     res.sendStatus(200);
   }
