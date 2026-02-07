@@ -96,13 +96,12 @@ app.post(
 
   let replyText = "";
 
-  // ★ 必ず for の中・try の前 ★
   const prompts = await getPrompts();
   const userType = detectUserType(event.message.text);
   const systemPrompt = getSystemPrompt(prompts, userType).content;
 
   console.log("SYSTEM PROMPT:", systemPrompt);
-     
+
   try {
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
@@ -119,6 +118,11 @@ app.post(
     replyText = "すみません、今は少し調子が悪いようです。";
   }
 
+  try {
+    await lineClient.replyMessage(event.replyToken, {
+      type: "text",
+      text: replyText
+    });
   } catch (err) {
     console.error("LINE reply error:", err);
   }
