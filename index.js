@@ -80,59 +80,58 @@ app.post(
   "/webhook",
   lineMiddleware({ channelSecret: process.env.LINE_CHANNEL_SECRET }),
   async (req, res) => {
-    console.log("Webhook hit!");
 
     const events = req.body.events || [];
 
     for (const event of events) {
-  
-  let imagePath = null;
-  let replyText = "";
 
-  if (event.type !== "message" || event.message.type !== "text") continue;
+      if (event.type !== "message" || event.message.type !== "text") {
+        continue;
+      }
 
-  try {
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: event.message.text }
-      ]
-    });
+      let imagePath = null;
+      let replyText = "";
 
-    replyText = completion.choices[0].message.content.trim();
+      try {
+        const completion = await openai.chat.completions.create({
+          model: "gpt-4o-mini",
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: event.message.text }
+          ]
+        });
 
-    if (replyText.startsWith("【IMAGE_MODE】")) {
-      imagePath = generateMathImage(
-        replyText.replace("【IMAGE_MODE】", "").trim()
-      );
+        replyText = completion.choices[0].message.content.trim();
+
+        if (replyText.startsWith("【IMAGE_MODE】")) {
+          imagePath = generateMathImage(
+            replyText.replace("【IMAGE_MODE】", "").trim()
+          );
+        }
+
+      } catch (err) {
+        console.error("OpenAI error:", err);
+        replyText = "すみません、今は少し調子が悪いようです。";
+      }
+
+      try {
+        if (imagePath) {
+          await lineClient.replyMessage(event.replyToken, {
+            type: "image",
+            originalContentUrl: `${process.env.BASE_URL}/image?path=${encodeURIComponent(imagePath)}`,
+            previewImageUrl: `${process.env.BASE_URL}/image?path=${encodeURIComponent(imagePath)}`
+          });
+        } else {
+          await lineClient.replyMessage(event.replyToken, {
+            type: "text",
+            text: replyText
+          });
+        }
+      } catch (err) {
+        console.error("LINE reply error:", err);
+      }
     }
 
-  } catch (err) {
-    console.error(err);
-    replyText = "すみません、今は少し調子が悪いようです。";
-  }
-
-  // ★ この try も for の中にあるか？
-  try {
-    if (imagePath) {
-      await lineClient.replyMessage(event.replyToken, {
-        type: "image",
-        originalContentUrl: `${process.env.BASE_URL}/image?path=${encodeURIComponent(imagePath)}`,
-        previewImageUrl: `${process.env.BASE_URL}/image?path=${encodeURIComponent(imagePath)}`
-      });
-    } else {
-      await lineClient.replyMessage(event.replyToken, {
-        type: "text",
-        text: replyText
-      });
-    }
-  } catch (err) {
-    console.error("LINE reply error:", err);
-  }
-}
-
-     
     res.sendStatus(200);
   }
 );
