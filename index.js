@@ -85,8 +85,11 @@ app.post(
     const events = req.body.events || [];
 
     for (const event of events) {
-      if (event.type !== "message" || event.message.type !== "text") continue;
 
+      let imagePath = null;
+       
+      if (event.type !== "message" || event.message.type !== "text") continue;
+       
       const userMessage = event.message.text;
       let replyText = "少しお待ちください。";
 
