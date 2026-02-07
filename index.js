@@ -4,7 +4,6 @@ import { Client, middleware as lineMiddleware } from "@line/bot-sdk";
 import OpenAI from "openai";
 import fs from "fs";
 import path from "path";
-import { createCanvas } from "canvas";
 
 console.log("🔥 index.js LOADED 🔥");
 
