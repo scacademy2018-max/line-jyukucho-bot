@@ -83,29 +83,28 @@ app.post(
 
     const events = req.body.events || [];
 
-    for (const event of events) {
+  for (const event of events) {
 
-      if (event.type !== "message" || event.message.type !== "text") {
-        continue;
-      }
+  if (event.type !== "message" || event.message.type !== "text") continue;
 
-      let imagePath = null;
-      let replyText = "";
+  let imagePath = null;
+  let replyText = "";
 
-const prompts = await getPrompts();
-const userType = detectUserType(event.message.text);
-const systemPrompt = getSystemPrompt(prompts, userType).content;
-       
-      try {
-        const completion = await openai.chat.completions.create({
-          model: "gpt-4o-mini",
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: event.message.text }
-          ]
-        });
+  // ★ ここで必ず定義する ★
+  const prompts = await getPrompts();
+  const userType = detectUserType(event.message.text);
+  const systemPrompt = getSystemPrompt(prompts, userType).content;
 
-        replyText = completion.choices[0].message.content.trim();
+  try {
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: event.message.text }
+      ]
+    });
+
+    replyText = completion.choices[0].message.content.trim();
 
         if (replyText.startsWith("【IMAGE_MODE】")) {
           imagePath = generateMathImage(
