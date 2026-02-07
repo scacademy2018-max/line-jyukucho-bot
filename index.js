@@ -97,10 +97,17 @@ app.post(
   let replyText = "";
 
   const prompts = await getPrompts();
-  const userType = detectUserType(event.message.text);
-  const systemPrompt = getSystemPrompt(prompts, userType).content;
 
-  console.log("SYSTEM PROMPT:", systemPrompt);
+const subjectKey = detectSubjectKey(event.message.text);
+const userType = detectUserType(event.message.text);
+
+// 優先順位：教科 → ユーザー種別 → default
+let promptKey = subjectKey || userType || "default";
+
+const systemPrompt = getSystemPrompt(prompts, promptKey).content;
+
+console.log("PROMPT KEY:", promptKey);
+console.log("SYSTEM PROMPT:", systemPrompt);
 
   try {
     const completion = await openai.chat.completions.create({
