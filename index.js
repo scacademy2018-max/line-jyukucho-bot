@@ -37,6 +37,15 @@ function detectUserType(text) {
   return "default";
 }
 
+function detectSubjectKey(text) {
+  if (text.match(/英語|英文|english|単語|文法/i)) return "english_help";
+  if (text.match(/数学|数式|関数|方程式|平方/i)) return "math_help";
+  if (text.match(/理科|電流|細胞|天体|イオン/i)) return "science_help";
+  if (text.match(/古文|漢字|文法|指示語|接続語/i)) return "japanese_help";
+  if (text.match(/公民|地理|歴史|人権|経済/i)) return "social_help";
+  return null;
+}
+
 // system prompt を安全に取得
 function getSystemPrompt(prompts, key) {
   return (
@@ -96,7 +105,7 @@ app.post(
   const systemPrompt = getSystemPrompt(prompts, userType).content;
 
   console.log("SYSTEM PROMPT:", systemPrompt);
-
+     
   try {
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
