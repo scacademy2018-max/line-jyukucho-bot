@@ -193,29 +193,29 @@ app.listen(PORT, () => {
 });
 
 function generateMathImage(text) {
-  const width = 900;
-  const height = 600;
-  const canvas = createCanvas(width, height);
-  const ctx = canvas.getContext("2d");
-
-  // 背景
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, width, height);
-
-  // 文字設定
-  ctx.fillStyle = "#000000";
-  ctx.font = "28px sans-serif";
-
   const lines = text.split("\n");
-  let y = 60;
 
-  for (const line of lines) {
-    ctx.fillText(line, 40, y);
-    y += 40;
-  }
+  const lineHeight = 40;
+  const width = 900;
+  const height = lines.length * lineHeight + 80;
 
-  const filePath = path.join("/tmp", `math_${Date.now()}.png`);
-  fs.writeFileSync(filePath, canvas.toBuffer("image/png"));
+  const svgText = lines.map((line, i) => {
+    const safeLine = line
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+    return `<text x="40" y="${60 + i * lineHeight}" font-size="28" fill="#000">${safeLine}</text>`;
+  }).join("\n");
+
+  const svgContent = `
+<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
+  <rect width="100%" height="100%" fill="#ffffff"/>
+  ${svgText}
+</svg>
+`;
+
+  const filePath = path.join("/tmp", `math_${Date.now()}.svg`);
+  fs.writeFileSync(filePath, svgContent, "utf8");
 
   return filePath;
 }
