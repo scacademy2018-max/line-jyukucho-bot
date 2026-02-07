@@ -109,35 +109,45 @@ const systemPrompt = getSystemPrompt(prompts, promptKey).content;
 console.log("PROMPT KEY:", promptKey);
 console.log("SYSTEM PROMPT:", systemPrompt);
 
-  try {
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: event.message.text }
-      ]
-    });
+ let replyText = "";
 
-    replyText = completion.choices[0].message.content.trim();
+try {
+  const completion = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: event.message.text }
+    ]
+  });
 
-  } catch (err) {
-    console.error("🔥 OpenAI ERROR 🔥", err);
-    replyText = "すみません、今は少し調子が悪いようです。";
+  replyText =
+    completion?.choices?.[0]?.message?.content;
+
+  if (typeof replyText !== "string" || replyText.trim() === "") {
+    throw new Error("Empty completion");
   }
 
-  try {
-    await lineClient.replyMessage(event.replyToken, {
-      type: "text",
-      text: replyText
-    });
-  } catch (err) {
-    console.error("LINE reply error:", err);
-  }
+  replyText = replyText.trim();
+
+} catch (err) {
+  console.error("🔥 OpenAI ERROR 🔥", err);
+  replyText = "すみません、今は少し調子が悪いようです。";
 }
 
-    res.sendStatus(200);
+try {
+  // ★ LINE直前の最終防御
+  if (!replyText || replyText.trim() === "") {
+    replyText = "すみません、回答を作れませんでした。";
   }
-);
+
+  await lineClient.replyMessage(event.replyToken, {
+    type: "text",
+    text: replyText.slice(0, 4900)
+  });
+
+} catch (err) {
+  console.error("LINE reply error:", err?.response?.data || err);
+}
 
 /* =========================
    Webhook 以外
