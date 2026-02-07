@@ -92,6 +92,10 @@ app.post(
       let imagePath = null;
       let replyText = "";
 
+const prompts = await getPrompts();
+const userType = detectUserType(event.message.text);
+const systemPrompt = getSystemPrompt(prompts, userType).content;
+       
       try {
         const completion = await openai.chat.completions.create({
           model: "gpt-4o-mini",
