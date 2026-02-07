@@ -94,59 +94,44 @@ app.post(
 
   if (event.type !== "message" || event.message.type !== "text") continue;
 
-  let replyText = "";
+  for (const event of events) {
 
-  const prompts = await getPrompts();
+  if (event.type !== "message" || event.message.type !== "text") continue;
 
-const subjectKey = detectSubjectKey(event.message.text);
-const userType = detectUserType(event.message.text);
+  let replyText = "";      // ★ ここで1回だけ
+  let imagePath = null;
 
-// 優先順位：教科 → ユーザー種別 → default
-let promptKey = subjectKey || userType || "default";
+  try {
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: event.message.text }
+      ]
+    });
 
-const systemPrompt = getSystemPrompt(prompts, promptKey).content;
+    const content =
+      completion?.choices?.[0]?.message?.content;
 
-console.log("PROMPT KEY:", promptKey);
-console.log("SYSTEM PROMPT:", systemPrompt);
+    if (typeof content !== "string" || content.trim() === "") {
+      throw new Error("Empty completion");
+    }
 
- let replyText = "";
+    replyText = content.trim();
 
-try {
-  const completion = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: event.message.text }
-    ]
-  });
-
-  replyText =
-    completion?.choices?.[0]?.message?.content;
-
-  if (typeof replyText !== "string" || replyText.trim() === "") {
-    throw new Error("Empty completion");
+  } catch (err) {
+    console.error("🔥 OpenAI ERROR 🔥", err);
+    replyText = "すみません、今は少し調子が悪いようです。";
   }
 
-  replyText = replyText.trim();
-
-} catch (err) {
-  console.error("🔥 OpenAI ERROR 🔥", err);
-  replyText = "すみません、今は少し調子が悪いようです。";
-}
-
-try {
-  // ★ LINE直前の最終防御
-  if (!replyText || replyText.trim() === "") {
-    replyText = "すみません、回答を作れませんでした。";
+  try {
+    await lineClient.replyMessage(event.replyToken, {
+      type: "text",
+      text: replyText.slice(0, 4900)
+    });
+  } catch (err) {
+    console.error("LINE reply error:", err?.response?.data || err);
   }
-
-  await lineClient.replyMessage(event.replyToken, {
-    type: "text",
-    text: replyText.slice(0, 4900)
-  });
-
-} catch (err) {
-  console.error("LINE reply error:", err?.response?.data || err);
 }
 
 /* =========================
