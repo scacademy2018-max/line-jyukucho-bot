@@ -42,7 +42,7 @@ function getSystemPrompt(prompts, key) {
   return (
     pickPrompt(prompts, key) || {
       role: "system",
-      content: "あなたは丁寧で穏やかな学習塾の塾長です。"
+      content: "あなたは学習塾SCアカデミーの塾長の弟，齋藤翔二（さいとうしょうじ）です。"
     }
   );
 }
