@@ -92,7 +92,14 @@ app.post(
   if (event.type !== "message" || event.message.type !== "text") continue;
 
   try {
-    const completion = await openai.chat.completions.create(...);
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: event.message.text }
+      ]
+    });
+
     replyText = completion.choices[0].message.content.trim();
 
     if (replyText.startsWith("【IMAGE_MODE】")) {
@@ -102,10 +109,11 @@ app.post(
     }
 
   } catch (err) {
+    console.error(err);
     replyText = "すみません、今は少し調子が悪いようです。";
   }
 
-  // ★★★ ここが for の中 ★★★
+  // ★ この try も for の中にあるか？
   try {
     if (imagePath) {
       await lineClient.replyMessage(event.replyToken, {
@@ -123,6 +131,7 @@ app.post(
     console.error("LINE reply error:", err);
   }
 }
+
      
     res.sendStatus(200);
   }
