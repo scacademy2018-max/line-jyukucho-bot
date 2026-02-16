@@ -39,19 +39,17 @@ function detectSubjectKey(text) {
   if (text.match(/英語|英文|english|単語|文法/i)) return "english_help";
   if (text.match(/数学|数式|関数|方程式|平方/i)) return "math_help";
   if (text.match(/理科|電流|細胞|天体|イオン/i)) return "science_help";
-  if (text.match(/古文|漢字|文法|指示語|接続語/i)) return "japanese_help";
+  if (text.match(/古文|漢字|指示語|接続語/i)) return "japanese_help";
   if (text.match(/公民|地理|歴史|人権|経済/i)) return "social_help";
   return null;
 }
 
 // system prompt を安全に取得
 function getSystemPrompt(prompts, key) {
-  return (
-    pickPrompt(prompts, key) || {
-      role: "system",
-      content: "あなたは学習塾SCアカデミーの塾長の弟，齋藤翔二（さいとうしょうじ）です。"
-    }
-  );
+  const found = pickPrompt(prompts, key);
+  if (found && found.content) return found.content;
+
+  return "あなたは学習塾SCアカデミーの塾長の弟，齋藤翔二（さいとうしょうじ）です。";
 }
 
 /* =========================
@@ -61,6 +59,7 @@ const lineConfig = {
   channelSecret: process.env.LINE_CHANNEL_SECRET,
   channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN
 };
+
 const lineClient = new Client(lineConfig);
 
 /* =========================
@@ -76,12 +75,18 @@ const openai = new OpenAI({
 const PROMPT_URL = process.env.PROMPT_URL;
 
 async function getPrompts() {
-  const res = await fetch(PROMPT_URL);
-  return await res.json();
+  if (!PROMPT_URL) return [];
+  try {
+    const res = await fetch(PROMPT_URL);
+    return await res.json();
+  } catch (err) {
+    console.error("Prompt fetch error:", err);
+    return [];
+  }
 }
 
 /* =========================
-   Webhook（⚠ json middleware 不要）
+   Webhook
 ========================= */
 app.post(
   "/webhook",
@@ -89,50 +94,56 @@ app.post(
   async (req, res) => {
 
     const events = req.body.events || [];
+    const prompts = await getPrompts();
 
-  for (const event of events) {
+    for (const event of events) {
 
-  if (event.type !== "message" || event.message.type !== "text") continue;
+      if (event.type !== "message" || event.message.type !== "text") continue;
 
-  for (const event of events) {
+      let replyText = "";
 
-  if (event.type !== "message" || event.message.type !== "text") continue;
+      try {
+        const text = event.message.text;
 
-  let replyText = "";      // ★ ここで1回だけ
-  let imagePath = null;
+        const subjectKey = detectSubjectKey(text);
+        const userType = detectUserType(text);
+        const selectedKey = subjectKey || userType || "default";
 
-  try {
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: event.message.text }
-      ]
-    });
+        const systemPrompt = getSystemPrompt(prompts, selectedKey);
 
-    const content =
-      completion?.choices?.[0]?.message?.content;
+        const completion = await openai.chat.completions.create({
+          model: "gpt-4o-mini",
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: text }
+          ]
+        });
 
-    if (typeof content !== "string" || content.trim() === "") {
-      throw new Error("Empty completion");
+        const content =
+          completion?.choices?.[0]?.message?.content;
+
+        if (!content) throw new Error("Empty completion");
+
+        replyText = content.trim();
+
+      } catch (err) {
+        console.error("🔥 OpenAI ERROR 🔥", err);
+        replyText = "すみません、今は少し調子が悪いようです。";
+      }
+
+      try {
+        await lineClient.replyMessage(event.replyToken, {
+          type: "text",
+          text: replyText.slice(0, 4900)
+        });
+      } catch (err) {
+        console.error("LINE reply error:", err?.response?.data || err);
+      }
     }
 
-    replyText = content.trim();
-
-  } catch (err) {
-    console.error("🔥 OpenAI ERROR 🔥", err);
-    replyText = "すみません、今は少し調子が悪いようです。";
+    res.status(200).end();
   }
-
-  try {
-    await lineClient.replyMessage(event.replyToken, {
-      type: "text",
-      text: replyText.slice(0, 4900)
-    });
-  } catch (err) {
-    console.error("LINE reply error:", err?.response?.data || err);
-  }
-}
+);
 
 /* =========================
    Webhook 以外
