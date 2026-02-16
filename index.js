@@ -132,10 +132,12 @@ app.post(
       }
 
       try {
-        await lineClient.replyMessage(event.replyToken, {
-          type: "text",
-          text: replyText.slice(0, 4900)
-        });
+        await lineClient.replyMessage(event.replyToken, [
+  {
+    type: "text",
+    text: replyText.slice(0, 4900)
+  }
+]);
       } catch (err) {
         console.error("LINE reply error:", err?.response?.data || err);
       }
